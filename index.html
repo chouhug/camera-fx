@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<title>相機匯率換算</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: 旅途中的工具，安靜、清楚、單手可用
+   IDEA: 收銀台的價格標籤 + 觀景窗
+   PICTURE: 全幅相機畫面，中央取景框，結果大字浮在下方
+   COLOUR and TYPE: 黑底、白字、薄荷綠 #b8f5d0 單一強調；Space Grotesk 數字 + Inter
+   LAYOUT: 上方相機，下方結果面板與控制；寬螢幕左右並排 */
+:root{--bg:#0d0d0d;--ink:#f4f4f2;--dim:#9a9a96;--mint:#b8f5d0;--panel:#171717;--line:#2a2a2a}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,"Noto Sans TC",system-ui,sans-serif;overflow-x:clip;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.app{display:grid;grid-template-rows:minmax(0,58vh) auto;min-height:100%;max-width:1240px;margin:0 auto}
+@media(min-width:900px){.app{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-rows:100vh}}
+.cam{position:relative;overflow:hidden;background:#000}
+video,.still{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.still{display:none}
+.shade{position:absolute;inset:0;pointer-events:none}
+.box{position:absolute;left:50%;top:46%;width:min(78%,420px);height:min(22%,130px);transform:translate(-50%,-50%);
+  border-radius:14px;box-shadow:0 0 0 200vmax rgba(0,0,0,.45);outline:2px solid var(--mint);outline-offset:0}
+.box::after{content:"";position:absolute;left:8%;right:8%;top:50%;height:2px;background:var(--mint);opacity:.55;animation:scan 1.6s ease-in-out infinite alternate}
+@keyframes scan{from{transform:translateY(-38px)}to{transform:translateY(38px)}}
+@media(prefers-reduced-motion:reduce){.box::after{animation:none}}
+.hint{position:absolute;left:0;right:0;top:calc(46% + min(11%,65px) + 14px);text-align:center;font-size:14px;color:#fff;text-shadow:0 1px 3px #000}
+.read{position:absolute;left:50%;top:calc(46% - min(11%,65px) - 44px);transform:translateX(-50%);background:rgba(0,0,0,.65);
+  padding:4px 12px;border-radius:99px;font:600 15px "Space Grotesk",monospace;color:var(--mint);white-space:nowrap}
+.start{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:14px;background:#000;text-align:center;padding:24px}
+.start p{margin:0;color:var(--dim);max-width:30ch}
+.camtools{position:absolute;right:12px;bottom:12px;display:flex;gap:8px}
+.panel{background:var(--panel);padding:20px max(4vw,16px) 28px;display:grid;gap:18px;align-content:start;border-top:1px solid var(--line)}
+@media(min-width:900px){.panel{border-top:0;border-left:1px solid var(--line);overflow:auto;padding-top:40px}}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) 48px minmax(0,1fr);gap:8px;align-items:end}
+label{display:grid;gap:4px;font-size:13px;color:var(--dim)}
+select,input{font:16px Inter,sans-serif;color:var(--ink);background:#0f0f0f;border:1px solid var(--line);border-radius:10px;height:48px;padding:0 12px;width:100%}
+select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+button{font:600 15px Inter,sans-serif;border:0;border-radius:10px;min-height:44px;padding:0 16px;cursor:pointer;background:#262626;color:var(--ink)}
+button.go{background:var(--mint);color:#0d0d0d}
+button.icon{width:48px;height:48px;padding:0;font-size:20px}
+.result{display:grid;gap:2px}
+.from{font:500 18px "Space Grotesk",sans-serif;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.to{font:700 clamp(40px,11vw,64px)/1.05 "Space Grotesk",sans-serif;color:var(--mint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.to small{font-size:.4em;color:var(--ink);margin-left:6px}
+.meta{font-size:13px;color:var(--dim)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{min-height:36px;font:500 15px "Space Grotesk",sans-serif;background:#0f0f0f;border:1px solid var(--line)}
+.chips button.on{border-color:var(--mint);color:var(--mint)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>*{flex:1 1 140px}
+h2{font:600 14px Inter,sans-serif;color:var(--dim);margin:6px 0 0}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+li{display:flex;justify-content:space-between;gap:12px;font:500 15px "Space Grotesk",sans-serif;border-bottom:1px solid var(--line);padding:6px 0}
+li span:last-child{color:var(--mint);white-space:nowrap}
+.empty{color:var(--dim);font:14px Inter,sans-serif;border:0}
+.err{color:#ffb4a8;font-size:14px}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="cam" id="cam">
+    <video id="video" playsinline muted></video>
+    <canvas class="still" id="still"></canvas>
+    <div class="shade"><div class="box" id="box"></div></div>
+    <div class="read" id="read" hidden></div>
+    <div class="hint" id="hint">把價格放進框內</div>
+    <div class="camtools">
+      <button class="icon" id="pause" title="暫停辨識" aria-label="暫停辨識">⏸</button>
+      <label class="icon" style="display:grid;place-items:center;background:#262626;border-radius:10px;width:48px;height:48px;cursor:pointer;color:var(--ink)" title="上傳照片">
+        <input type="file" id="file" accept="image/*" hidden><span aria-hidden="true">🖼</span><span style="position:absolute;width:1px;height:1px;overflow:hidden">上傳照片</span>
+      </label>
+    </div>
+    <div class="start" id="start">
+      <button class="go" id="open">開啟相機</button>
+      <p id="startMsg">對準菜單、價格標籤，會自動辨識數字並換算。第一次會下載辨識模型（約 2 MB）。</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="pair">
+      <label>看到的貨幣<select id="from"></select></label>
+      <button class="icon" id="swap" aria-label="對調貨幣" title="對調">⇄</button>
+      <label>換成<select id="to"></select></label>
+    </div>
+
+    <div class="result" aria-live="polite">
+      <div class="from" id="outFrom">—</div>
+      <div class="to" id="outTo">—</div>
+      <div class="meta" id="rateLine">讀取匯率中…</div>
+    </div>
+
+    <div class="chips" id="chips" aria-label="辨識到的數字"></div>
+
+    <div class="row">
+      <label style="flex:2 1 160px">手動輸入金額<input id="manual" type="number" inputmode="decimal" placeholder="例如 1280"></label>
+      <button id="save" style="align-self:end">記下這筆</button>
+    </div>
+    <div class="err" id="err" hidden></div>
+
+    <h2>記錄</h2>
+    <ul id="hist"><li class="empty">按「記下這筆」會存在這台裝置上</li></ul>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+{
+const $ = id => document.getElementById(id);
+const CUR = {TWD:"新台幣",USD:"美元",JPY:"日圓",KRW:"韓元",EUR:"歐元",GBP:"英鎊",CNY:"人民幣",HKD:"港幣",CHF:"瑞士法郎",CZK:"捷克克朗",THB:"泰銖",SGD:"新加坡幣",MYR:"馬來西亞令吉",VND:"越南盾",PHP:"菲律賓披索",AUD:"澳幣",CAD:"加幣",RUB:"俄羅斯盧布"};
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d }catch{ return d } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)) }catch{} }
+};
+
+const opts = Object.entries(CUR).map(([c,n]) => `<option value="${c}">${c} ${n}</option>`).join('');
+$('from').innerHTML = opts; $('to').innerHTML = opts;
+$('from').value = store.get('from','JPY'); $('to').value = store.get('to','TWD');
+
+let rate = null, amount = null, running = false, busy = false, worker = null, stream = null;
+let lastSeen = [], hist = store.get('hist', []);
+
+// ---------- 匯率 ----------
+async function loadRate(){
+  const f = $('from').value, t = $('to').value;
+  store.set('from', f); store.set('to', t);
+  if (f === t){ rate = 1; showRate(Date.now(), false); return render() }
+  const cache = store.get('rates_'+f, null);
+  if (cache && Date.now() - cache.at < 6*3600e3){ rate = cache.rates[t]; showRate(cache.at, false); return render() }
+  $('rateLine').textContent = '讀取匯率中…';
+  try{
+    const r = await fetch(`https://open.er-api.com/v6/latest/${f}`);
+    const d = await r.json();
+    if (d.result !== 'success') throw new Error(d['error-type'] || 'API 錯誤');
+    store.set('rates_'+f, {at: Date.now(), rates: d.rates});
+    rate = d.rates[t]; showRate(Date.now(), false);
+  }catch(e){
+    if (cache){ rate = cache.rates[t]; showRate(cache.at, true) }
+    else { rate = null; $('rateLine').textContent = '無法取得匯率，請檢查網路連線' }
+  }
+  render();
+}
+function showRate(at, stale){
+  const f = $('from').value, t = $('to').value;
+  const d = new Date(at), hm = d.toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  $('rateLine').textContent = `1 ${f} = ${fmt(rate, 4)} ${t}　·　${stale ? '離線，使用 ' : ''}${hm} 的匯率`;
+}
+function fmt(n, max = 2){
+  if (n == null || !isFinite(n)) return '—';
+  const digits = Math.abs(n) >= 100 ? 0 : max;
+  return n.toLocaleString('en-US', {maximumFractionDigits: digits});
+}
+function render(){
+  const f = $('from').value, t = $('to').value;
+  if (amount == null){ $('outFrom').textContent = '—'; $('outTo').innerHTML = '—'; return }
+  $('outFrom').textContent = `${fmt(amount)} ${f}`;
+  $('outTo').innerHTML = rate == null ? '—' : `${fmt(amount * rate)}<small>${t}</small>`;
+}
+
+// ---------- 數字解析 ----------
+function parseNumbers(text){
+  const found = text.replace(/[oO]/g,'0').match(/\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g) || [];
+  return [...new Set(found.map(s => s.replace(/[,，]/g,'')))]
+    .map(Number).filter(n => n > 0 && n < 1e10).slice(0, 6);
+}
+function pickBest(nums){
+  // 位數最多的通常是價格（避免抓到單位、件數）
+  return nums.slice().sort((a,b) => String(b).replace('.','').length - String(a).replace('.','').length)[0];
+}
+function setAmount(n){
+  amount = n; $('manual').value = ''; render();
+  [...$('chips').children].forEach(b => b.classList.toggle('on', Number(b.dataset.n) === n));
+}
+function showChips(nums){
+  $('chips').innerHTML = nums.map(n => `<button data-n="${n}" class="${n===amount?'on':''}">${fmt(n)}</button>`).join('');
+}
+
+// ---------- 影像前處理 ----------
+const work = document.createElement('canvas'), wctx = work.getContext('2d', {willReadFrequently:true});
+function cropFromVideo(){
+  const v = $('video'), vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw) return null;
+  const r = v.getBoundingClientRect(), b = $('box').getBoundingClientRect();
+  const s = Math.max(r.width / vw, r.height / vh);
+  const ox = (vw * s - r.width) / 2, oy = (vh * s - r.height) / 2;
+  const sx = (b.left - r.left + ox) / s, sy = (b.top - r.top + oy) / s;
+  const sw = b.width / s, sh = b.height / s;
+  return prep(v, sx, sy, sw, sh);
+}
+function prep(src, sx, sy, sw, sh){
+  const scale = Math.min(2, 900 / sw);
+  work.width = Math.round(sw * scale); work.height = Math.round(sh * scale);
+  wctx.drawImage(src, sx, sy, sw, sh, 0, 0, work.width, work.height);
+  const img = wctx.getImageData(0, 0, work.width, work.height), p = img.data;
+  let min = 255, max = 0, sum = 0;
+  for (let i = 0; i < p.length; i += 4){
+    const g = p[i]*.299 + p[i+1]*.587 + p[i+2]*.114; p[i] = g;
+    if (g < min) min = g; if (g > max) max = g; sum += g;
+  }
+  const mean = sum / (p.length / 4), invert = mean < 110, k = 255 / Math.max(1, max - min);
+  for (let i = 0; i < p.length; i += 4){
+    let g = (p[i] - min) * k; if (invert) g = 255 - g;
+    p[i] = p[i+1] = p[i+2] = g;
+  }
+  wctx.putImageData(img, 0, 0);
+  return work;
+}
+
+// ---------- OCR ----------
+async function getWorker(){
+  if (worker) return worker;
+  $('hint').textContent = '載入辨識模型中…';
+  worker = await Tesseract.createWorker('eng');
+  await worker.setParameters({tessedit_char_whitelist: '0123456789.,', tessedit_pageseg_mode: '6'});
+  $('hint').textContent = '把價格放進框內';
+  return worker;
+}
+async function recognize(canvas){
+  const w = await getWorker();
+  const { data } = await w.recognize(canvas);
+  return parseNumbers(data.text);
+}
+async function loop(){
+  if (!running) return;
+  if (!busy){
+    busy = true;
+    try{
+      const c = cropFromVideo();
+      if (c){
+        const nums = await recognize(c);
+        if (nums.length){
+          const best = pickBest(nums);
+          $('read').hidden = false; $('read').textContent = nums.map(n => fmt(n)).join('  ·  ');
+          lastSeen = [...lastSeen.slice(-2), best];
+          // 連續兩次讀到相同數字才更新，避免畫面跳動
+          if (lastSeen.length >= 2 && lastSeen.at(-1) === lastSeen.at(-2)){ showChips(nums); setAmount(best) }
+        }
+      }
+    }catch(e){ showErr('辨識失敗：' + e.message) }
+    busy = false;
+  }
+  setTimeout(loop, 350);
+}
+
+// ---------- 相機 ----------
+async function openCam(){
+  hideErr();
+  if (!navigator.mediaDevices?.getUserMedia){
+    $('startMsg').textContent = '這個瀏覽器無法使用相機（需要 https 網址）。可以改用右下角的「上傳照片」。';
+    return;
+  }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false});
+    const v = $('video'); v.srcObject = stream; await v.play();
+    $('start').hidden = true; $('still').style.display = 'none'; v.style.display = '';
+    running = true; $('pause').textContent = '⏸'; getWorker().then(loop);
+  }catch(e){
+    $('startMsg').textContent = e.name === 'NotAllowedError'
+      ? '相機權限被拒絕。請到瀏覽器設定允許相機，或改用「上傳照片」。'
+      : '無法開啟相機：' + e.message;
+  }
+}
+$('open').onclick = openCam;
+$('pause').onclick = () => {
+  if (!stream){ openCam(); return }
+  running = !running;
+  $('pause').textContent = running ? '⏸' : '▶';
+  $('pause').title = running ? '暫停辨識' : '繼續辨識';
+  $('hint').textContent = running ? '把價格放進框內' : '已暫停';
+  if (running){ $('video').play(); loop() } else $('video').pause();
+};
+
+// 上傳照片：整張辨識
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  hideErr(); running = false; $('pause').textContent = '▶';
+  const img = new Image(); img.src = URL.createObjectURL(f); await img.decode();
+  const st = $('still'); st.width = img.naturalWidth; st.height = img.naturalHeight;
+  st.getContext('2d').drawImage(img, 0, 0); st.style.display = 'block'; $('video').style.display = 'none';
+  $('start').hidden = true; $('hint').textContent = '辨識照片中…';
+  try{
+    const nums = await recognize(prep(img, 0, 0, img.naturalWidth, img.naturalHeight));
+    $('hint').textContent = nums.length ? '點下方數字切換' : '沒有找到數字';
+    showChips(nums); if (nums.length) setAmount(pickBest(nums));
+  }catch(err){ showErr('辨識失敗：' + err.message) }
+  e.target.value = '';
+};
+
+$('chips').onclick = e => { const b = e.target.closest('button'); if (b) setAmount(Number(b.dataset.n)) };
+$('manual').oninput = e => { const n = parseFloat(e.target.value); amount = isFinite(n) ? n : null; render() };
+$('from').onchange = loadRate; $('to').onchange = loadRate;
+$('swap').onclick = () => { const f = $('from').value; $('from').value = $('to').value; $('to').value = f; loadRate() };
+
+$('save').onclick = () => {
+  if (amount == null || rate == null) return;
+  hist = [{a: amount, f: $('from').value, r: amount * rate, t: $('to').value}, ...hist].slice(0, 30);
+  store.set('hist', hist); drawHist();
+};
+function drawHist(){
+  $('hist').innerHTML = hist.length
+    ? hist.map(h => `<li><span>${fmt(h.a)} ${h.f}</span><span>${fmt(h.r)} ${h.t}</span></li>`).join('')
+    : '<li class="empty">按「記下這筆」會存在這台裝置上</li>';
+}
+function showErr(m){ $('err').hidden = false; $('err').textContent = m }
+function hideErr(){ $('err').hidden = true }
+
+drawHist(); loadRate();
+}
+</script>
+</body>
+</html>
