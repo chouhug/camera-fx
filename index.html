@@ -15,6 +15,7 @@
    LAYOUT: 上方相機，下方結果面板與控制；寬螢幕左右並排 */
 :root{--bg:#0d0d0d;--ink:#f4f4f2;--dim:#9a9a96;--mint:#b8f5d0;--panel:#171717;--line:#2a2a2a}
 *{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,"Noto Sans TC",system-ui,sans-serif;overflow-x:clip;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
@@ -220,8 +221,9 @@ async function getWorker(){
   $('hint').textContent = '把價格放進框內';
   return worker;
 }
-async function recognize(canvas){
+async function recognize(canvas, sparse = false){
   const w = await getWorker();
+  await w.setParameters({tessedit_pageseg_mode: sparse ? '11' : '6'});
   const { data } = await w.recognize(canvas);
   return parseNumbers(data.text);
 }
@@ -284,7 +286,7 @@ $('file').onchange = async e => {
   st.getContext('2d').drawImage(img, 0, 0); st.style.display = 'block'; $('video').style.display = 'none';
   $('start').hidden = true; $('hint').textContent = '辨識照片中…';
   try{
-    const nums = await recognize(prep(img, 0, 0, img.naturalWidth, img.naturalHeight));
+    const nums = await recognize(prep(img, 0, 0, img.naturalWidth, img.naturalHeight), true);
     $('hint').textContent = nums.length ? '點下方數字切換' : '沒有找到數字';
     showChips(nums); if (nums.length) setAmount(pickBest(nums));
   }catch(err){ showErr('辨識失敗：' + err.message) }
