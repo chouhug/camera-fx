@@ -164,14 +164,41 @@ function render(){
 }
 
 // ---------- 數字解析 ----------
-function parseNumbers(text){
-  const found = text.replace(/[oO]/g,'0').match(/\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g) || [];
-  return [...new Set(found.map(s => s.replace(/[,，]/g,'')))]
-    .map(Number).filter(n => n > 0 && n < 1e10).slice(0, 6);
+// 價格旁常見的貨幣符號／代碼：出現在同一個字或相鄰字時加分
+const CUR_RE = /[¥$€£₩฿円元]|NT|JPY|USD|EUR|TWD|YEN|KRW|HKD|CNY|GBP|CHF|CZK|Kč/i;
+const NUM_RE = /\d{1,3}(?:[,，]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?/g;
+function wordsOf(d){
+  if (d.words?.length) return d.words;
+  const out = [];
+  for (const b of d.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) out.push(...(l.words || []));
+  return out;
 }
-function pickBest(nums){
-  // 位數最多的通常是價格（避免抓到單位、件數）
-  return nums.slice().sort((a,b) => String(b).replace('.','').length - String(a).replace('.','').length)[0];
+function candidates(words){
+  const list = [];
+  words.forEach((w, i) => {
+    let t = (w.text || '').trim();
+    if (!t || w.confidence < 55) return;
+    if (/\d/.test(t)) t = t.replace(/(?<=\d)[oO]|[oO](?=\d)/g, '0');
+    const alnum = (t.match(/[\p{L}\p{N}]/gu) || []).length, digits = (t.match(/\d/g) || []).length;
+    // 主要由數字組成的字才算，排除「B8X」這類雜訊
+    if (!digits || digits / alnum < 0.6) return;
+    const h = w.bbox.y1 - w.bbox.y0;
+    const near = [words[i-1]?.text, t, words[i+1]?.text].join(' ');
+    const cur = CUR_RE.test(near);
+    for (const m of t.match(NUM_RE) || []){
+      const n = Number(m.replace(/[,，]/g, ''));
+      const nd = m.replace(/\D/g, '').length;
+      if (!(n > 0 && n < 1e9)) continue;
+      if (nd === 1 && w.confidence < 80 && !cur) continue;  // 單一數字最容易是雜訊
+      list.push({n, h, score: h * (w.confidence / 100) * (cur ? 1.6 : 1) * (nd >= 2 ? 1.2 : 1)});
+    }
+  });
+  if (!list.length) return [];
+  // 價格通常是框內最大的字：比最大字小一半以上的數字（數量、編號、小字）丟掉
+  const maxH = Math.max(...list.map(c => c.h));
+  const best = new Map();
+  for (const c of list) if (c.h >= maxH * 0.5 && (!best.has(c.n) || best.get(c.n) < c.score)) best.set(c.n, c.score);
+  return [...best].sort((a, b) => b[1] - a[1]).map(([n]) => n).slice(0, 6);
 }
 function setAmount(n){
   amount = n; $('manual').value = ''; render();
@@ -183,6 +210,7 @@ function showChips(nums){
 
 // ---------- 影像前處理 ----------
 const work = document.createElement('canvas'), wctx = work.getContext('2d', {willReadFrequently:true});
+let contrast = 255;
 function cropFromVideo(){
   const v = $('video'), vw = v.videoWidth, vh = v.videoHeight;
   if (!vw) return null;
@@ -194,7 +222,7 @@ function cropFromVideo(){
   return prep(v, sx, sy, sw, sh);
 }
 function prep(src, sx, sy, sw, sh){
-  const scale = Math.min(2, 900 / sw);
+  const scale = Math.min(2, 1200 / sw);
   work.width = Math.round(sw * scale); work.height = Math.round(sh * scale);
   wctx.drawImage(src, sx, sy, sw, sh, 0, 0, work.width, work.height);
   const img = wctx.getImageData(0, 0, work.width, work.height), p = img.data;
@@ -203,6 +231,7 @@ function prep(src, sx, sy, sw, sh){
     const g = p[i]*.299 + p[i+1]*.587 + p[i+2]*.114; p[i] = g;
     if (g < min) min = g; if (g > max) max = g; sum += g;
   }
+  contrast = max - min;
   const mean = sum / (p.length / 4), invert = mean < 110, k = 255 / Math.max(1, max - min);
   for (let i = 0; i < p.length; i += 4){
     let g = (p[i] - min) * k; if (invert) g = 255 - g;
@@ -217,15 +246,14 @@ async function getWorker(){
   if (worker) return worker;
   $('hint').textContent = '載入辨識模型中…';
   worker = await Tesseract.createWorker('eng');
-  await worker.setParameters({tessedit_char_whitelist: '0123456789.,', tessedit_pageseg_mode: '6'});
   $('hint').textContent = '把價格放進框內';
   return worker;
 }
 async function recognize(canvas, sparse = false){
   const w = await getWorker();
   await w.setParameters({tessedit_pageseg_mode: sparse ? '11' : '6'});
-  const { data } = await w.recognize(canvas);
-  return parseNumbers(data.text);
+  const { data } = await w.recognize(canvas, {}, {text: true, blocks: true});
+  return candidates(wordsOf(data));
 }
 async function loop(){
   if (!running) return;
@@ -233,20 +261,18 @@ async function loop(){
     busy = true;
     try{
       const c = cropFromVideo();
-      if (c){
-        const nums = await recognize(c);
-        if (nums.length){
-          const best = pickBest(nums);
-          $('read').hidden = false; $('read').textContent = nums.map(n => fmt(n)).join('  ·  ');
-          lastSeen = [...lastSeen.slice(-2), best];
-          // 連續兩次讀到相同數字才更新，避免畫面跳動
-          if (lastSeen.length >= 2 && lastSeen.at(-1) === lastSeen.at(-2)){ showChips(nums); setAmount(best) }
-        }
-      }
+      // 框內幾乎沒有明暗變化（對著牆、桌面）就不辨識，避免無中生有
+      const nums = c && contrast > 60 ? await recognize(c) : [];
+      const best = nums[0] ?? null;
+      $('read').hidden = !nums.length;
+      if (nums.length) $('read').textContent = nums.map(n => fmt(n)).join('  ·  ');
+      lastSeen = [...lastSeen.slice(-3), best];
+      // 最近 4 次裡有 3 次讀到同一個數字才更新結果
+      if (best != null && lastSeen.filter(x => x === best).length >= 3){ showChips(nums); setAmount(best) }
     }catch(e){ showErr('辨識失敗：' + e.message) }
     busy = false;
   }
-  setTimeout(loop, 350);
+  setTimeout(loop, 250);
 }
 
 // ---------- 相機 ----------
@@ -288,7 +314,7 @@ $('file').onchange = async e => {
   try{
     const nums = await recognize(prep(img, 0, 0, img.naturalWidth, img.naturalHeight), true);
     $('hint').textContent = nums.length ? '點下方數字切換' : '沒有找到數字';
-    showChips(nums); if (nums.length) setAmount(pickBest(nums));
+    showChips(nums); if (nums.length) setAmount(nums[0]);
   }catch(err){ showErr('辨識失敗：' + err.message) }
   e.target.value = '';
 };
